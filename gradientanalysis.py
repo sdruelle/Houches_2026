@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from pywavan import fan_trans
 import numpy as np
+import yt
 
 def get_cubes(ds):
     levelmin = ds.parameters["levelmin"]
@@ -39,21 +40,48 @@ def yt2angle(ds):
     return cos_theta
 
 sim_dir = "/Xnfs/Houches2026/group7"
-sim_names = np.array(["half_B","default_setup","double_B"])
+sim_names = np.array(["default_setup","low_turbrms","high_turbrms"])
 
 cos_theta = np.zeros(3,dtype=object)
 
+output_num = 49
+
 for i,name in enumerate(sim_names):
-    data = yt.load(f"{sim_dir}/{name}/output_{iout:05d}/info_{iout:05d}.txt")
+    data = yt.load(f"{sim_dir}/{name}/output_{output_num:05d}/info_{output_num:05d}.txt")
     cos_theta[i] = yt2angle(data)
 
+fig, ax = plt.subplots(figsize=(8, 6))
 
-fig = plt.figure(figsize=(10,6))
-_ = plt.hist(cos_theta[0].flatten(), bins=25, density=True, color="blue",  rwidth=0.9, alpha=0.7, lable=r"2.5 $\mu$G")
-_ = plt.hist(cos_theta[1].flatten(), bins=25, density=True, color="red",   rwidth=0.9, alpha=0.7, lable=r"5 $\mu$G")
-_ = plt.hist(cos_theta[2].flatten(), bins=25, density=True, color="green", rwidth=0.9, alpha=0.7, lable=r"10 $\mu$G")
-plt.xlabel(r"cos $\theta$")
-plt.ylabel("PDF")
-plt.legend()
-plt.show()
+colors = ["#1f77b4", "#d62728", "#2ca02c"]
+labels = [r"$B_0$ = 2.5 $\mu$G (half_B)", 
+          r"$B_0$ = 5.0 $\mu$G (default)", 
+          r"$B_0$ = 10.0 $\mu$G (double_B)"]
+
+bins = np.linspace(-1, 1, 50)
+
+for i in range(3):
+    flat_data = cos_theta[i].flatten()
+    print(flat_data)
+    clean_data = flat_data[~np.isnan(flat_data)]
+    
+    ax.hist(clean_data, bins=bins, density=True, color=colors[i], 
+            histtype='step', linewidth=2.5, label=labels[i])
+    
+    ax.hist(clean_data, bins=bins, density=True, color=colors[i], 
+            histtype='stepfilled', alpha=0.1)
+
+ax.axvline(0, color='black', linestyle='--', linewidth=1, alpha=0.5, zorder=0)
+
+ax.set_xlabel(r"cos $\theta$ (Alignement magnetic field - density gradient)", fontsize=14)
+ax.set_ylabel("PDF", fontsize=14)
+ax.set_xlim(-1, 1)
+
+ax.tick_params(axis='both', which='major', labelsize=12, direction='in', top=True, right=True)
+ax.minorticks_on()
+ax.tick_params(axis='both', which='minor', direction='in', top=True, right=True)
+
+ax.legend(fontsize=12, loc='upper left', frameon=True, edgecolor='black')
+
+plt.tight_layout()
+plt.savefig("pdf_alignement_turbulence.png", dpi=300, bbox_inches="tight")
 plt.close()
