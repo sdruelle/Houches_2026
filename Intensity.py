@@ -10,15 +10,15 @@ c = const.c.cgs.value
 h = const.h.cgs.value
 mu = 1.4
 
-# Generic transition parameters
-nu_ul = 115.27e9
-A_ul = 7.2e-8
-g_u = 3.0
-g_l = 1.0
+# --- Generic transition parameters (Updated for HI 21cm line) ---
+nu_ul = 1.420405751e9   
+A_ul = 2.8843e-15       
+g_u = 3.0               
+g_l = 1.0               
 
 # Particle mass for thermal broadening and fraction in lower state
-m_part = mu * m_H
-f_l = 1e-4
+m_part = 1.0 * m_H 
+f_l = 0.25   
 
 # Turbulent velocity dispersion, in cm/s.
 sigma_turb = 10.0e5  # 10 km/s
