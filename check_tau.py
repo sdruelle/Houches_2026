@@ -1,6 +1,8 @@
 import numpy as np
 from astropy.io import fits
 from astropy import constants as const
+import matplotlib
+matplotlib.use('Agg') # Set non-interactive backend before importing pyplot
 import matplotlib.pyplot as plt
 
 # --- Choice of the LOS ---
@@ -45,18 +47,21 @@ if los_axis == 'Z':
     n_los = nz
     shape_2d = (ny, nx)
     idx_func = lambda i: (i, slice(None), slice(None)) 
+    axis_idx = 0
 elif los_axis == 'Y':
     v_los = hdul['VELOCITY_Y'].data
     ds_pc = hdul[0].header.get('CDELT2', 1.0)
     n_los = ny
     shape_2d = (nz, nx)
     idx_func = lambda i: (slice(None), i, slice(None)) 
+    axis_idx = 1
 elif los_axis == 'X':
     v_los = hdul['VELOCITY_X'].data
     ds_pc = hdul[0].header.get('CDELT1', 1.0)
     n_los = nx
     shape_2d = (nz, ny)
     idx_func = lambda i: (slice(None), slice(None), i) 
+    axis_idx = 2
 else:
     raise ValueError("los_axis must be 'X', 'Y', or 'Z'")
 
@@ -78,6 +83,7 @@ nu_grid = nu_ul * (1.0 - v_grid / c)
 nu_grid_3d = nu_grid[:, np.newaxis, np.newaxis]
 
 I_nu_cube = np.zeros((Nv, shape_2d[0], shape_2d[1]))
+tau_cube = np.zeros((Nv, shape_2d[0], shape_2d[1])) # Initialize optical depth cube
 
 print("...Computing Radiative Transfer (PPV Cube).")
 
@@ -104,6 +110,8 @@ for i in range(n_los):
 
     S_nu = (2.0 * h * nu_ul**3 / c**2) / (np.exp((h * nu_ul) / (k_B * T_i)) - 1.0)
 
+    # Accumulate optical depth and intensity
+    tau_cube += dtau_nu
     I_nu_cube = I_nu_cube * np.exp(-dtau_nu) + S_nu * (1.0 - np.exp(-dtau_nu))
 
 hdul.close()
@@ -112,46 +120,34 @@ print("...Converting Specific Intensity to Brightness Temperature.")
 conversion_factor = c**2 / (2.0 * k_B * nu_ul**2)
 T_B_cube = I_nu_cube * conversion_factor
 
-print("\n...Saving PPV cube to FITS.")
-hdu_out = fits.PrimaryHDU(T_B_cube)
-hdr = hdu_out.header
-
-hdr['BUNIT'] = 'K' 
-hdr['CTYPE1'] = 'X' if los_axis in ['Y', 'Z'] else 'Y'
-hdr['CTYPE2'] = 'Y' if los_axis == 'Z' else 'Z'
-hdr['CTYPE3'] = 'VRAD'            
-hdr['CRVAL3'] = 0.0               
-hdr['CDELT3'] = v_grid[1] - v_grid[0] 
-hdr['CRPIX3'] = Nv // 2          
-hdr['CUNIT3'] = 'cm/s'           
-
-filename_out = f'cube_ppv_Tb_LOS_{los_axis}.fits'
-hdu_out.writeto(filename_out, overwrite=True)
-print(f"Saved as '{filename_out}'.")
-
-print("\n...Computing Moments.")
+print("...Computing Moments and Column Densities.")
 v_grid_kms = v_grid / 1.0e5 
 
 # Moment 0: Integrated Brightness Temperature
 moment_0 = np.trapezoid(T_B_cube, x=v_grid_kms, axis=0)
 
-# Moment 1: Intensity-weighted velocity
-moment_1_numerator = np.trapezoid(T_B_cube * v_grid_kms[:, np.newaxis, np.newaxis], x=v_grid_kms, axis=0)
+# True Column Density (integrated along LOS directly from physical cube)
+N_H_true = np.sum(n_tot, axis=axis_idx) * ds_cm
 
-threshold = 1e-3 * np.max(moment_0)
-mask = moment_0 > threshold
+# Inferred Column Density (using the optically thin relation)
+N_H_inferred = 1.823e18 * moment_0
 
-moment_1 = np.full_like(moment_0, np.nan)
-moment_1[mask] = moment_1_numerator[mask] / moment_0[mask]
+# Maximum optical depth along velocity axis for each spatial pixel
+tau_max = np.max(tau_cube, axis=0)
 
-# Moment 2: Intensity-weighted velocity dispersion
-moment_2_numerator = np.trapezoid(T_B_cube * (v_grid_kms**2)[:, np.newaxis, np.newaxis], x=v_grid_kms, axis=0)
+# Total integrated optical depth along the velocity axis
+tau_total = np.trapezoid(tau_cube, x=v_grid_kms, axis=0)
 
-moment_2 = np.full_like(moment_0, np.nan)
-variance = (moment_2_numerator[mask] / moment_0[mask]) - moment_1[mask]**2
-moment_2[mask] = np.sqrt(np.maximum(variance, 0.0))
+# Optically thin mask (tau < 1)
+thin_mask = tau_max < 1.0
 
-print("...Plotting Moment maps.")
+# Calculate the relation ratio (Inferred / True). Should be ~1 where thin_mask is True.
+relation_ratio = np.full_like(N_H_true, np.nan)
+# We only calculate the ratio where True column density is greater than zero to avoid division by zero
+valid_pixels = thin_mask & (N_H_true > 0)
+relation_ratio[valid_pixels] = N_H_inferred[valid_pixels] / N_H_true[valid_pixels]
+
+print("...Plotting Validation Maps.")
 
 # Axis label logic
 if los_axis == 'Z':
@@ -161,30 +157,47 @@ elif los_axis == 'Y':
 elif los_axis == 'X':
     xlabel, ylabel = "Y (pixels)", "Z (pixels)"
 
-# Updated to a 1x3 grid
-fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+# Create a 2x3 grid for validation checks (figsize widened to fit 3 columns)
+fig, axes = plt.subplots(2, 3, figsize=(20, 12))
 
-# Plot Moment 0
-im0 = axes[0].imshow(moment_0, origin='lower', cmap='inferno')
-fig.colorbar(im0, ax=axes[0], label="Integrated $T_B$ (K km s$^{-1}$)")
-axes[0].set_title(f"Moment 0 - LOS: {los_axis}")
-axes[0].set_xlabel(xlabel)
-axes[0].set_ylabel(ylabel)
+# 1. True Column Density
+im0 = axes[0, 0].imshow(np.log10(N_H_true + 1e-10), origin='lower', cmap='viridis')
+fig.colorbar(im0, ax=axes[0, 0], label=r"$\log_{10}(N_{H, true})$ (cm$^{-2}$)")
+axes[0, 0].set_title(f"True Column Density - LOS: {los_axis}")
+axes[0, 0].set_xlabel(xlabel)
+axes[0, 0].set_ylabel(ylabel)
 
-# Plot Moment 1
-im1 = axes[1].imshow(moment_1, origin='lower', cmap='jet')
-fig.colorbar(im1, ax=axes[1], label="Velocity (km s$^{-1}$)")
-axes[1].set_title(f"Moment 1 (Velocity Field) - LOS: {los_axis}")
-axes[1].set_xlabel(xlabel)
-axes[1].set_ylabel(ylabel)
+# 2. Maximum Optical Depth
+im1 = axes[0, 1].imshow(tau_max, origin='lower', cmap='magma', vmax=2.0) 
+fig.colorbar(im1, ax=axes[0, 1], label=r"Max $\tau_\nu$")
+axes[0, 1].set_title(rf"Max Optical Depth ($\tau$) - LOS: {los_axis}")
+axes[0, 1].set_xlabel(xlabel)
+axes[0, 1].set_ylabel(ylabel)
+axes[0, 1].contour(tau_max, levels=[1.0], colors='white', linestyles='dashed')
 
-# Plot Moment 2
-im2 = axes[2].imshow(moment_2, origin='lower', cmap='viridis')
-fig.colorbar(im2, ax=axes[2], label="Velocity Dispersion (km s$^{-1}$)")
-axes[2].set_title(f"Moment 2 (Dispersion) - LOS: {los_axis}")
-axes[2].set_xlabel(xlabel)
-axes[2].set_ylabel(ylabel)
+# 3. Total Integrated Optical Depth
+im2 = axes[0, 2].imshow(tau_total, origin='lower', cmap='magma') 
+fig.colorbar(im2, ax=axes[0, 2], label=r"$\int \tau_\nu dv$ (km s$^{-1}$)")
+axes[0, 2].set_title(rf"Total Integrated Optical Depth - LOS: {los_axis}")
+axes[0, 2].set_xlabel(xlabel)
+axes[0, 2].set_ylabel(ylabel)
+
+# 4. Inferred Column Density
+im3 = axes[1, 0].imshow(np.log10(N_H_inferred + 1e-10), origin='lower', cmap='viridis')
+fig.colorbar(im3, ax=axes[1, 0], label=r"$\log_{10}(N_{H, inferred})$ (cm$^{-2}$)")
+axes[1, 0].set_title(f"Inferred Column Density (Optically Thin Approx)")
+axes[1, 0].set_xlabel(xlabel)
+axes[1, 0].set_ylabel(ylabel)
+
+# 5. Relation Check Ratio (Inferred / True)
+im4 = axes[1, 1].imshow(relation_ratio, origin='lower', cmap='RdBu_r', vmin=0.5, vmax=1.5)
+fig.colorbar(im4, ax=axes[1, 1], label=r"$N_{H, inferred} / N_{H, true}$")
+axes[1, 1].set_title(r"Relation Validity (Inferred / True) for $\tau < 1$")
+axes[1, 1].set_xlabel(xlabel)
+axes[1, 1].set_ylabel(ylabel)
+
+# 6. Hide the empty 6th subplot 
+axes[1, 2].axis('off')
 
 plt.tight_layout()
-plt.savefig(f"Moments_map_LOS_{los_axis}.png")
-plt.show()
+plt.savefig(f"Optical_Thickness_Validation_LOS_{los_axis}.png")

@@ -21,7 +21,7 @@ m_part = 1.0 * m_H
 f_l = 0.25   
 
 # Turbulent velocity dispersion, in cm/s.
-sigma_turb = 10.0e5  # 10 km/s
+sigma_turb = 0 
 
 print("...Opening fits file.")
 fits_image_filename = "cube_info_00051.fits"

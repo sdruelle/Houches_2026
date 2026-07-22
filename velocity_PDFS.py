@@ -1,10 +1,14 @@
 import numpy as np
 from astropy.io import fits
 from astropy import constants as const
+import matplotlib
+matplotlib.use('Agg') # Mode non-interactif pour éviter les crashs sur serveur
 import matplotlib.pyplot as plt
 
-# --- Choice of the LOS ---
+# --- Choice of the LOS and parameters ---
 los_axis = 'Z' 
+fits_image_filename = "cube_info_00051.fits"
+lags = [1, 4, 8, 16, 32]
 
 # --- Constants and parameters ---
 k_B = const.k_B.cgs.value
@@ -19,22 +23,17 @@ A_ul = 2.8843e-15
 g_u = 3.0               
 g_l = 1.0               
 
-# Particle mass for thermal broadening and fraction in lower state
 m_part = 1.0 * m_H 
 f_l = 0.25             
-
-# Turbulent velocity dispersion, in cm/s.
-sigma_turb = 0  # 10 km/s
-
-print("...Opening FITS file.")
-fits_image_filename = "cube_info_00051.fits"
-try:
-    hdul = fits.open(fits_image_filename)
-except FileNotFoundError:
-    print(f"Error : {fits_image_filename} can't be found.")
-    exit()
+sigma_turb = 0.0  
 
 # Recovering cube data
+print(f"...Opening FITS file: {fits_image_filename}")
+try:
+    hdul = fits.open(fits_image_filename)
+except FileNotFoundError as exc:
+    raise FileNotFoundError(f"Error : {fits_image_filename} can't be found.") from exc
+
 density = hdul['DENSITY'].data
 pressure = hdul['PRESSURE'].data
 nz, ny, nx = density.shape 
@@ -66,9 +65,8 @@ temperature = (pressure * mu * m_H) / (density * k_B)
 n_tot = density / (mu * m_H)
 n_l_cube = n_tot * f_l  
 
-print(f"...Initializing PPV grid for LOS = {los_axis}-axis.")
-
 # Velocity/Frequency grid creation
+print(f"...Initializing PPV grid for LOS = {los_axis}-axis.")
 sigma_v_thermal_max = np.sqrt(k_B * np.max(temperature) / m_part)
 v_half_width = np.max(np.abs(v_los)) + 5.0 * (sigma_v_thermal_max + sigma_turb)
 
@@ -80,7 +78,6 @@ nu_grid_3d = nu_grid[:, np.newaxis, np.newaxis]
 I_nu_cube = np.zeros((Nv, shape_2d[0], shape_2d[1]))
 
 print("...Computing Radiative Transfer (PPV Cube).")
-
 # Integration along the LOS
 for i in range(n_los):
     T_i = temperature[idx_func(i)][np.newaxis, :, :]
@@ -101,90 +98,93 @@ for i in range(n_los):
     
     kappa_nu = term1 * term2 * term3 * phi_nu
     dtau_nu = kappa_nu * ds_cm
-
     S_nu = (2.0 * h * nu_ul**3 / c**2) / (np.exp((h * nu_ul) / (k_B * T_i)) - 1.0)
-
+    
     I_nu_cube = I_nu_cube * np.exp(-dtau_nu) + S_nu * (1.0 - np.exp(-dtau_nu))
 
 hdul.close()
 
-print("...Converting Specific Intensity to Brightness Temperature.")
+
+print("...Computing Moments.")
 conversion_factor = c**2 / (2.0 * k_B * nu_ul**2)
 T_B_cube = I_nu_cube * conversion_factor
-
-print("\n...Saving PPV cube to FITS.")
-hdu_out = fits.PrimaryHDU(T_B_cube)
-hdr = hdu_out.header
-
-hdr['BUNIT'] = 'K' 
-hdr['CTYPE1'] = 'X' if los_axis in ['Y', 'Z'] else 'Y'
-hdr['CTYPE2'] = 'Y' if los_axis == 'Z' else 'Z'
-hdr['CTYPE3'] = 'VRAD'            
-hdr['CRVAL3'] = 0.0               
-hdr['CDELT3'] = v_grid[1] - v_grid[0] 
-hdr['CRPIX3'] = Nv // 2          
-hdr['CUNIT3'] = 'cm/s'           
-
-filename_out = f'cube_ppv_Tb_LOS_{los_axis}.fits'
-hdu_out.writeto(filename_out, overwrite=True)
-print(f"Saved as '{filename_out}'.")
-
-print("\n...Computing Moments.")
 v_grid_kms = v_grid / 1.0e5 
 
-# Moment 0: Integrated Brightness Temperature
 moment_0 = np.trapezoid(T_B_cube, x=v_grid_kms, axis=0)
-
-# Moment 1: Intensity-weighted velocity
 moment_1_numerator = np.trapezoid(T_B_cube * v_grid_kms[:, np.newaxis, np.newaxis], x=v_grid_kms, axis=0)
 
 threshold = 1e-3 * np.max(moment_0)
-mask = moment_0 > threshold
+mask = (np.isfinite(moment_0) & (moment_0 > threshold))
 
 moment_1 = np.full_like(moment_0, np.nan)
 moment_1[mask] = moment_1_numerator[mask] / moment_0[mask]
 
-# Moment 2: Intensity-weighted velocity dispersion
-moment_2_numerator = np.trapezoid(T_B_cube * (v_grid_kms**2)[:, np.newaxis, np.newaxis], x=v_grid_kms, axis=0)
+print("...Computing and Plotting Velocity Increments PDFs with Gaussian Fits.")
 
-moment_2 = np.full_like(moment_0, np.nan)
-variance = (moment_2_numerator[mask] / moment_0[mask]) - moment_1[mask]**2
-moment_2[mask] = np.sqrt(np.maximum(variance, 0.0))
+lags = [1, 4, 8, 16, 32] 
 
-print("...Plotting Moment maps.")
+lags_to_fit = [1, 32]
 
-# Axis label logic
-if los_axis == 'Z':
-    xlabel, ylabel = "X (pixels)", "Y (pixels)"
-elif los_axis == 'Y':
-    xlabel, ylabel = "X (pixels)", "Z (pixels)"
-elif los_axis == 'X':
-    xlabel, ylabel = "Y (pixels)", "Z (pixels)"
+fig_inc, ax_inc = plt.subplots(figsize=(8, 6))
 
-# Updated to a 1x3 grid
-fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+for l in lags:
+    delta_v_x = moment_1[:, l:] - moment_1[:, :-l]
+    delta_v_y = moment_1[l:, :] - moment_1[:-l, :]
+    
+    delta_v_combined = np.concatenate([delta_v_x.flatten(), delta_v_y.flatten()])
+    valid_delta_v = delta_v_combined[np.isfinite(delta_v_combined)]
+    
+    if valid_delta_v.size > 0:
+        hist, bin_edges = np.histogram(valid_delta_v, bins=150, density=True)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+        p = ax_inc.plot(
+            bin_centers, 
+            hist, 
+            drawstyle="steps-mid", 
+            linewidth=2.0, 
+            label=rf"$l = {l}$ px"
+        )
+        
+        if l in lags_to_fit:
+            mu = np.mean(valid_delta_v)
+            sigma = np.std(valid_delta_v)
+            x_gauss = np.linspace(bin_centers.min(), bin_centers.max(), 500)
+            y_gauss = (1.0 / (sigma * np.sqrt(2.0 * np.pi))) * np.exp(-0.5 * ((x_gauss - mu) / sigma)**2)
+            
+            ax_inc.plot(
+                x_gauss, 
+                y_gauss, 
+                linestyle=":", 
+                color=p[0].get_color(), 
+                linewidth=1.8, 
+                label=rf"Gauss. fit ($l={l}$)"
+            )
 
-# Plot Moment 0
-im0 = axes[0].imshow(moment_0, origin='lower', cmap='inferno')
-fig.colorbar(im0, ax=axes[0], label="Integrated $T_B$ (K km s$^{-1}$)")
-axes[0].set_title(f"Moment 0 - LOS: {los_axis}")
-axes[0].set_xlabel(xlabel)
-axes[0].set_ylabel(ylabel)
+ax_inc.set_yscale('log')
+ax_inc.set_ylim(bottom=1e-4)
 
-# Plot Moment 1
-im1 = axes[1].imshow(moment_1, origin='lower', cmap='jet')
-fig.colorbar(im1, ax=axes[1], label="Velocity (km s$^{-1}$)")
-axes[1].set_title(f"Moment 1 (Velocity Field) - LOS: {los_axis}")
-axes[1].set_xlabel(xlabel)
-axes[1].set_ylabel(ylabel)
-
-# Plot Moment 2
-im2 = axes[2].imshow(moment_2, origin='lower', cmap='viridis')
-fig.colorbar(im2, ax=axes[2], label="Velocity Dispersion (km s$^{-1}$)")
-axes[2].set_title(f"Moment 2 (Dispersion) - LOS: {los_axis}")
-axes[2].set_xlabel(xlabel)
-axes[2].set_ylabel(ylabel)
+ax_inc.set_xlabel(r"Velocity Increment $\Delta v(l)$ (km s$^{-1}$)")
+ax_inc.set_ylabel("Probability Density")
+ax_inc.set_title(f"PDF of Velocity Increments & Gaussian Fits — LOS: {los_axis}")
+ax_inc.legend()
+ax_inc.grid(True, which="both", ls="--", alpha=0.4)
 
 plt.tight_layout()
-plt.savefig(f"Moments_map_LOS_{los_axis}.png")
-plt.show()
+plt.savefig(f"PDF_Velocity_Increments_Fits_LOS_{los_axis}.png", dpi=200, bbox_inches="tight")
+print(f"...Saved 'PDF_Velocity_Increments_Fits_LOS_{los_axis}.png'.")
+
+print("\n...Saving 2D Moment maps to FITS files for Power Spectrum analysis.")
+
+hdu_m0 = fits.PrimaryHDU(moment_0)
+hdu_m0.header['BUNIT'] = 'K km/s'
+file_m0 = f"moment_0_map_LOS_{los_axis}.fits"
+hdu_m0.writeto(file_m0, overwrite=True)
+print(f"Saved '{file_m0}'")
+
+moment_1_clean = np.nan_to_num(moment_1, nan=0.0)
+
+hdu_m1 = fits.PrimaryHDU(moment_1_clean)
+hdu_m1.header['BUNIT'] = 'km/s'
+file_m1 = f"moment_1_map_LOS_{los_axis}.fits"
+hdu_m1.writeto(file_m1, overwrite=True)
+print(f"Saved '{file_m1}'")
