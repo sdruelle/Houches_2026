@@ -10,7 +10,6 @@ scripts/
   ppv/             # radiative transfer and PPV diagnostics
   observations/    # instrumental effect and moment maps
   analysis/        # statistical analyses and power spectra
-archive/           # preserved prototype, outside the main pipeline
 ```
 
 ## Recommended PPV pipeline
