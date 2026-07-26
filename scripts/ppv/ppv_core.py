@@ -1,5 +1,3 @@
-"""Fonctions communes pour les diagnostics de cubes PPV HI à 21 cm."""
-
 import numpy as np
 from astropy import constants as const
 from astropy.io import fits
@@ -15,7 +13,6 @@ G_U, G_L = 3.0, 1.0
 
 
 def _los_data(hdul, axis):
-    """Retourne le champ vitesse et les dimensions correspondant à la LOS."""
     density = hdul["DENSITY"].data
     choices = {
         "Z": ("VELOCITY_Z", "CDELT3", 0),
@@ -30,7 +27,6 @@ def _los_data(hdul, axis):
 
 
 def make_ppv(filename, axis="Z", n_velocity=200, sigma_turb=0.0, with_tau=False):
-    """Calcule un cube PPV et les champs physiques utiles aux diagnostics."""
     with fits.open(filename) as hdul:
         density, pressure, velocity, ds_pc, axis_index = _los_data(hdul, axis)
 
@@ -76,7 +72,6 @@ def make_ppv(filename, axis="Z", n_velocity=200, sigma_turb=0.0, with_tau=False)
 
 
 def moments(brightness_temperature, v_grid):
-    """Calcule les moments 0, 1 et 2, avec un masque de faible émission."""
     velocity_kms = v_grid / 1e5
     moment_0 = np.trapezoid(brightness_temperature, x=velocity_kms, axis=0)
     mask = moment_0 > 1e-3 * np.nanmax(moment_0)
