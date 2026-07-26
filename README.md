@@ -1,64 +1,56 @@
-# Houches 2026 — analyse de turbulence
+# Houches 2026 — turbulence analysis
 
-Ce dépôt contient des scripts Python pour analyser des simulations de turbulence
-astrophysique RAMSES et des cubes FITS.
+This repository contains Python scripts to analyze RAMSES astrophysical turbulence simulations and FITS cubes.
 
-## Organisation
+## Organization
 
 ```text
 scripts/
-  simulation/      # export RAMSES → cube FITS
-  ppv/             # transfert radiatif et diagnostics PPV
-  observations/    # effet instrumental et cartes de moments
-  analysis/        # analyses statistiques et spectres de puissance
-archive/           # prototype conservé, hors pipeline courant
+  simulation/      # RAMSES export → FITS cube
+  ppv/             # radiative transfer and PPV diagnostics
+  observations/    # instrumental effect and moment maps
+  analysis/        # statistical analyses and power spectra
+archive/           # preserved prototype, outside the main pipeline
 ```
 
-## Pipeline PPV recommandé
+## Recommended PPV pipeline
 
-Lancer les commandes depuis la racine du dépôt, après avoir adapté les chemins
-de données définis dans les scripts :
+Run the commands from the root of the repository, after adapting the data paths defined in the scripts:
 
 ```bash
-# 1. Export RAMSES vers FITS
+# 1. Export RAMSES to FITS
 python scripts/simulation/export_fits.py
 
-# 2. Génération du cube position-position-vitesse
+# 2. Position-position-velocity cube generation
 python scripts/ppv/generate_ppv.py
 
-# 3. Simulation de l'observation EBHIS
+# 3. EBHIS observation simulation
 python scripts/observations/apply_ebhis.py
 
-# 4. Calcul des moments 0, 1 et 2
+# 4. Computation of moments 0, 1, and 2
 python scripts/observations/compute_moments.py
 ```
 
-Diagnostics PPV complémentaires :
+Additional PPV diagnostics:
 
 ```bash
 python scripts/ppv/validate_optical_depth.py
 python scripts/ppv/velocity_pdfs.py
 ```
 
-## Analyses disponibles
+## Available analyses
 
-- `scripts/analysis/compute_power_spectra.py` : calcul des spectres de puissance.
-- `scripts/analysis/plot_power_spectra.py` : tracé de spectres existants.
-- `scripts/analysis/plot_field_gradient_alignment.py` : alignement champ magnétique–gradient de densité.
-- `scripts/analysis/nongaussian_segmentation.py` : segmentation non gaussienne.
+- `scripts/analysis/compute_power_spectra.py`: computation of power spectra.
+- `scripts/analysis/plot_power_spectra.py`: plotting of existing spectra.
+- `scripts/analysis/plot_field_gradient_alignment.py`: magnetic field–density gradient alignment.
+- `scripts/analysis/nongaussian_segmentation.py`: non-Gaussian segmentation.
 
-## Dépendances
+## Dependencies
 
-Pour le pipeline FITS :
+For the FITS pipeline:
 
 ```bash
 pip install numpy scipy matplotlib astropy
 ```
 
-Selon les scripts utilisés, `yt`, `h5py`, `pspec` et `pywavan` peuvent aussi
-être nécessaires.
-
-## Archive
-
-`archive/line_of_sight_intensity_prototype.py` est un prototype conservé pour
-référence. Le pipeline actuel utilise `scripts/ppv/generate_ppv.py`.
+Depending on the scripts used, `yt`, `h5py`, `pspec`, and `pywavan` may also be required.
