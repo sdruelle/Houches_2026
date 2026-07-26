@@ -1,5 +1,3 @@
-"""Trace les PDF des incréments de vitesse d'un cube PPV."""
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
