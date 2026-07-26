@@ -1,5 +1,3 @@
-"""Génère un cube PPV HI et ses trois cartes de moments."""
-
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.io import fits
