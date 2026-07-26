@@ -1,9 +1,7 @@
-#%%
 import yt
 import numpy as np
 import matplotlib.pyplot as plt
 from pywavan import fan_trans, nb_scale, powspec
-#%%
 
 plt.rcParams.update({
     "figure.facecolor": "white",
@@ -20,7 +18,7 @@ plt.rcParams.update({
     "legend.facecolor": "white",
     "legend.edgecolor": "black",
 })
-#%%
+
 plot_path = "/Xnfs/Houches2026/mberkner/turbulenceanalysis/plots/"
 work_path = "/Xnfs/Houches2026/mberkner/turbulenceanalysis/data/"
 path_double_B = "/Xnfs/Houches2026/group7/double_B/"
@@ -76,7 +74,7 @@ data_sets = {
 }
 iout = 50
 
-#make dir for plots_: 
+#make dir for plots 
 import os
 for key in data_sets.keys():
     if not os.path.exists(plot_path+f"{key}/"):
@@ -87,7 +85,7 @@ for key in data_sets.keys():
 for key in data_sets.keys():
     path = data_sets[key]["path"]
     data_sets[key]["data"] = yt.load(path+"output_000{}/info_000{}.txt".format(iout, iout))
-#%%
+
 def get_cubes(ds, component="density"):
     levelmin = ds.parameters["levelmin"]
     res = 1 << levelmin 
@@ -114,7 +112,6 @@ def get_cubes(ds, component="density"):
         prj.show()
 
         # Save it as a FITS file
-
         prj_fits = yt.FITSProjection(ds, "z", ("gas", "density"), image_res=2**ds.parameters["levelmax"])
         prj_fits.set_unit(("density"), ("M_sun/pc**2"))
         prj_fits.writeto(f"{work_path}/{key}/{iout}_proj_z.fits", overwrite=True)
@@ -142,7 +139,6 @@ def get_cubes(ds, component="density"):
         prj.show()
 
         # Save it as a FITS file
-
         prj_fits = yt.FITSProjection(ds, "z", B_cube, image_res=2**ds.parameters["levelmax"])
         prj_fits.set_unit(("B_field"), ("microgauss"))
         prj_fits.writeto(f"{work_path}/{key}/{iout}_proj_z_Bfield.fits", overwrite=True)
@@ -159,7 +155,7 @@ def get_cubes(ds, component="density"):
     wt, S11a, wav_k, S1a, q = fan_trans(im_copy, q=[q]*nb_scale((im.shape[0], im.shape[1])), zeromean=True, nan_frame=True)
 
     return wt, S11a, wav_k, S1a, q, im
-#%%
+
 for key in data_sets.keys():
     wt, S11a, wav_k, S1a, q, im = get_cubes(data_sets[key]["data"])
 
@@ -168,7 +164,7 @@ for key in data_sets.keys():
     data_sets[key]["wav_k"] = wav_k
     data_sets[key]["S1a"] = S1a
     data_sets[key]["im"]= im
-#%%
+
 for key in data_sets.keys():
     wt, S11a, wav_k, S1a, q, im = get_cubes(data_sets[key]["data"], component="B_field")
 
@@ -178,7 +174,6 @@ for key in data_sets.keys():
     data_sets[key]["B_field"]["S1a"] = S1a
     data_sets[key]["B_field"]["im"]= im
     
-#%%
 from matplotlib import colors as colorsx
 
 def plot_decomposition(data_sets, key):
@@ -187,6 +182,7 @@ def plot_decomposition(data_sets, key):
     wav_k = data_sets[key]["wav_k"]
     S1a = data_sets[key]["S1a"]
     im = data_sets[key]["im"]
+    
     # Plot the decomposition
     num_scales = len(wav_k)
     meanim = np.nanmean(im)
@@ -212,13 +208,13 @@ def plot_decomposition(data_sets, key):
     cbar = fig.colorbar(imag, ax=axes.ravel().tolist(), orientation="horizontal")
     fig.savefig(plot_path+f"{key}/{iout}_decomposition.png", dpi=300, bbox_inches='tight')
     plt.show()
-#%%
+    
 # plot_decomposition(data_sets, "double_B")
 # plot_decomposition(data_sets, "half_B")
 # plot_decomposition(data_sets, "default_setup")
 for key in data_sets.keys():
     plot_decomposition(data_sets, key)
-#%%
+
 #Plot the segmented power spectra
 from matrix_legend import matrix_legend
 
@@ -246,7 +242,6 @@ plot_power_spectra(data_sets, ["high_turbrms", "low_turbrms", "default_setup"], 
 plot_power_spectra(data_sets, ["mhd_com_forcing", "mhd_sol_forcing", "default_setup"], "Forcing Comparison")
 plot_power_spectra(data_sets, ["powerlaw_driving", "isothermal", "default_setup"], "Power Law Driving Comparison")
 
-# %%
 # look at mass distribution of coherent and gaussian components
 def plot_mass_distribution(data_sets, keys, title):
     fig, ax = plt.subplots(figsize=(8,5))
@@ -273,10 +268,7 @@ plot_mass_distribution(data_sets, ["double_B", "half_B", "default_setup"], "Magn
 plot_mass_distribution(data_sets, ["high_turbrms", "low_turbrms", "default_setup"], "Turbulence Strength Comparison")
 plot_mass_distribution(data_sets, ["mhd_com_forcing", "mhd_sol_forcing", "default_setup"], "Forcing Comparison")
 plot_mass_distribution(data_sets, ["powerlaw_driving", "isothermal", "default_setup"], "Power Law Driving Comparison")
-# compressive more low and high density gas --> see that in the tails of the PDF
-# B field: pressure: stabilize small structures and prevent collapse , tension make coherent structure, agline magnetic field 
 
-#%%
 # Calculate the Crossings in the powerspectra of Gaussian and Coherent components
 def calculate_crossings(data_sets, keys):
     crossings = {}
@@ -305,8 +297,7 @@ ax.set_xlabel('k')
 ax.set_ylabel('Simulation')
 ax.set_title('Crossings in Power Spectra of \n Gaussian and Coherent Components')
 fig.savefig(plot_path+f"crossings_power_spectra.png", dpi=300, bbox_inches='tight')
-#Put legend outside of the plot
-# %%
+
 # Integrate the power spectra of Gaussian and Coherent components to get the total mass in each component
 # Normalize the integrated mass by the total mass in the original image
 def integrate_power_spectra(data_sets, keys):
@@ -329,6 +320,7 @@ def integrate_power_spectra(data_sets, keys):
             "Gaussian": integrated_Gaussian_mass / total_mass if total_mass != 0 else 0
         }
     return integrated_masses
+    
 # Plot the integrated masses in a bar plot
 integrated_masses = integrate_power_spectra(data_sets, data_sets.keys())
 fig, ax = plt.subplots(figsize=(5,5), constrained_layout=True)
@@ -345,4 +337,3 @@ ax.set_xticks(index + bar_width / 2)
 ax.set_xticklabels([data_sets[key]["title"] for key in integrated_masses.keys()], rotation=45, ha='right')
 ax.legend() 
 fig.savefig(plot_path+f"integrated_power_spectra.png", dpi=300, bbox_inches='tight')
-# %%
