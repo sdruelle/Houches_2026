@@ -1,5 +1,3 @@
-"""Vérifie l'approximation optiquement mince pour un cube PPV HI."""
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
